@@ -18,16 +18,19 @@ import Address from "./models/Addresses.mjs"
 
 dotenv.config()
 
+
 const app = express()
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 10 // limit each IP to 100 requests per windowMs
-})
+//const limiter = rateLimit({
+//    windowMs: 15 * 60 * 1000, // 15 minutes
+//    max: 10 // limit each IP to 100 requests per windowMs
+//})
 const port = 3001
+
 const FSN_MAINNET = {
     gateway: "wss://mainnetpublicgateway1.fusionnetwork.io:10001",
     ID: "32659"
 }
+
 const FSN_TESTNET = {
     gateway: "wss://testnetpublicgateway1.fusionnetwork.io:10001",
     ID: "46688"
@@ -40,15 +43,16 @@ let web3
 let provider
 
 // apply to all requests
-app.use(limiter)
+//app.use(limiter)
 app.use(bodyParser.urlencoded({ extended: false }))
 app.use(bodyParser.json())
 app.use(cors())
 app.use(helmet())
 
+
 // Database
 Mongoose.connect(
-    `mongodb+srv://dbUser:${process.env.DB_PASSWORD}fsn-addresses.yn8dh.mongodb.net/faucet`,
+    `mongodb+srv://dbUser:${process.env.DB_PASSWORD}@fsn-addresses.yn8dh.mongodb.net/faucet`,
     {
         useCreateIndex: true,
         useNewUrlParser: true,
@@ -82,7 +86,7 @@ const payoutFSN = async addr => {
         from: FAUCET.address,
         to: addr,
         asset: web3.fsn.consts.FSNToken,
-        value: web3.utils.toHex(web3.utils.toWei("2", "gwei")),
+        value: web3.utils.toHex(web3.utils.toWei("0.0002", "ether")),
         chainId: web3.utils.toHex(NETWORK.ID)
     }
     let { gas, gasPrice } = await web3.fsntx.buildSendAssetTx(tx)
@@ -117,7 +121,7 @@ app.post("/api/v1/retrieve", async (req, res) => {
 
         // ipAddress, walletAddress -> date (person can only do the faucet every 7 days)
         // const SEVEN_DAYS = moment().subtract("7", "days").toDate()
-        const ONE_DAY = moment().subtract("1", "days").toDate()
+        const ONE_DAY = moment().subtract("1", "minutes").toDate()
         
         let walletAppliedRecently = await Address.findOne({
             walletAddress
@@ -164,6 +168,7 @@ app.post("/api/v1/retrieve", async (req, res) => {
         res.status(400).send(err.message)
     }
 })
+
 
 app.listen(port, () => {
     console.log(`API Server listening on port ${port}`)
