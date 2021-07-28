@@ -4,6 +4,7 @@
   "description": "To run FSN Faucet on Fusion Testnet, add FSN supplier hot wallet private key to .env file:",
   "main": "index.js",
   "scripts": {
+    "start": "node run.mjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

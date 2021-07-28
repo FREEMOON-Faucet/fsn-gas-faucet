@@ -81,25 +81,25 @@ const keepWeb3Alive = () => {
 
 
 const payoutFSN = async addr => {
-    const FAUCET = await web3.eth.accounts.privateKeyToAccount(process.env.PRIVATE_KEY)
-    let tx = {
-        from: FAUCET.address,
-        to: addr,
-        asset: web3.fsn.consts.FSNToken,
-        value: web3.utils.toHex(web3.utils.toWei("0.0002", "ether")),
-        chainId: web3.utils.toHex(NETWORK.ID)
-    }
-    let { gas, gasPrice } = await web3.fsntx.buildSendAssetTx(tx)
-    tx.gas = gas
-    tx.gasPrice = gasPrice
+//    const FAUCET = await web3.eth.accounts.privateKeyToAccount(process.env.PRIVATE_KEY)
+//    let tx = {
+//        from: FAUCET.address,
+//        to: addr,
+//        asset: web3.fsn.consts.FSNToken,
+//        value: web3.utils.toHex(web3.utils.toWei("0.0002", "ether")),
+//        chainId: web3.utils.toHex(NETWORK.ID)
+//    }
+//    let { gas, gasPrice } = await web3.fsntx.buildSendAssetTx(tx)
+//    tx.gas = gas
+//    tx.gasPrice = gasPrice
 
-    try {
-        const rawTx = await FAUCET.signTransaction(tx)
-        const sent = await web3.eth.sendSignedTransaction(rawTx.rawTransaction)
-        return sent
-    } catch(err) {
-        throw new Error("Sending faucet gas failed: ", err.message)
-    }
+//    try {
+//        const rawTx = await FAUCET.signTransaction(tx)
+//        const sent = await web3.eth.sendSignedTransaction(rawTx.rawTransaction)
+//        return sent
+//    } catch(err) {
+//        throw new Error("Sending faucet gas failed: ", err.message)
+//    }
 }
 
 
