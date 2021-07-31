@@ -13,10 +13,14 @@ import rateLimit from "express-rate-limit" // limit repeated requests to the api
 import Web3 from "web3" // interacts with blockchain
 import web3FusionExtend from "web3-fusion-extend" // interacts with fusion blockchain
 import dotenv from "dotenv"
+import HDWalletProvider from "@truffle/hdwallet-provider"
 
 import Address from "./models/Addresses.mjs"
 
 dotenv.config()
+
+const KEY = process.env.PRIVATE_KEY
+const DB = process.env.DB_KEY
 
 
 const app = express()
@@ -32,15 +36,17 @@ const FSN_MAINNET = {
 }
 
 const FSN_TESTNET = {
-    gateway: "wss://testnetpublicgateway1.fusionnetwork.io:10001",
+    gateway: "https://testway.freemoon.xyz/gate",
     ID: "46688"
 }
 
 // Set network parameters
 const NETWORK = FSN_TESTNET
 
+
 let web3
 let provider
+let account
 
 // apply to all requests
 //app.use(limiter)
@@ -52,7 +58,7 @@ app.use(helmet())
 
 // Database
 Mongoose.connect(
-    `mongodb+srv://dbUser:${process.env.DB_PASSWORD}@fsn-addresses.yn8dh.mongodb.net/faucet`,
+    `mongodb+srv://dbUser:${DB}@fsn-addresses.yn8dh.mongodb.net/faucet`,
     {
         useCreateIndex: true,
         useNewUrlParser: true,
@@ -61,50 +67,63 @@ Mongoose.connect(
 )
 
 
-const keepWeb3Alive = () => {
-    provider = new Web3.providers.WebsocketProvider(NETWORK.gateway)
-    provider.on("connect", function() { 
-        web3._isConnected = true
+// const keepWeb3Alive = () => {
+//     provider = new Web3.providers.WebsocketProvider(NETWORK.gateway)
+//     provider.on("connect", function() { 
+//         web3._isConnected = true
+//     })
+//     provider.on("error", function(err) {
+//         provider.disconnect()
+//     })
+//     provider.on("end", function(err) {
+//         web3._isConnected = false
+//         setTimeout(() => {
+//             keepWeb3Alive()
+//         }, 500)
+//     })
+//     web3 = new Web3(provider)
+// }
+
+const getWeb3 = async () => {
+    provider = new HDWalletProvider({
+        privateKeys: [ KEY ],
+        providerOrUrl: NETWORK.gateway
     })
-    provider.on("error", function(err) {
-        provider.disconnect()
-    })
-    provider.on("end", function(err) {
-        web3._isConnected = false
-        setTimeout(() => {
-            keepWeb3Alive()
-        }, 500)
-    })
+
     web3 = new Web3(provider)
-    web3 = web3FusionExtend.extend(web3)
+
+    return web3.eth.getAccounts()
 }
 
 
 const payoutFSN = async addr => {
-//    const FAUCET = await web3.eth.accounts.privateKeyToAccount(process.env.PRIVATE_KEY)
-//    let tx = {
-//        from: FAUCET.address,
-//        to: addr,
-//        asset: web3.fsn.consts.FSNToken,
-//        value: web3.utils.toHex(web3.utils.toWei("0.0002", "ether")),
-//        chainId: web3.utils.toHex(NETWORK.ID)
-//    }
-//    let { gas, gasPrice } = await web3.fsntx.buildSendAssetTx(tx)
-//    tx.gas = gas
-//    tx.gasPrice = gasPrice
 
-//    try {
-//        const rawTx = await FAUCET.signTransaction(tx)
-//        const sent = await web3.eth.sendSignedTransaction(rawTx.rawTransaction)
-//        return sent
-//    } catch(err) {
-//        throw new Error("Sending faucet gas failed: ", err.message)
-//    }
+    const SEND_GAS_AMOUNT = new BigNumber("100000")
+    const SEND_GAS_PRICE = new BigNumber("2000000000")
+    const SEND_GAS = SEND_GAS_AMOUNT.multipliedBy(SEND_GAS_PRICE).toString()
+
+    try {
+        const receipt = await web3.eth.sendTransaction({
+            from: account,
+            to: addr,
+            value: SEND_GAS,
+            gas: 21000,
+            gasPrice: SEND_GAS_PRICE.toString()
+        })
+
+        return receipt.transactionHash
+    } catch(err) {
+        throw new Error("Sending faucet gas failed: ", err.message)
+    }
 }
 
 
 app.post("/api/v1/retrieve", async (req, res) => {
     try {
+       
+        [ account ] = await getWeb3()
+        console.log(account)
+        
         // return Bad Request whenever no body was passed
         if (!req.body) return res.sendStatus(400)
 
@@ -147,8 +166,7 @@ app.post("/api/v1/retrieve", async (req, res) => {
 
         // Let's execute the payout
         let txHash = await payoutFSN(walletAddress)
-        console.log(`Sending gas to ${walletAddress}, ${txHash.transactionHash}`)
-        txHash = txHash.transactionHash
+        console.log(`Sending gas to ${walletAddress}, ${txHash}`)
 
         await Address.updateOne(
             {
@@ -173,6 +191,4 @@ app.post("/api/v1/retrieve", async (req, res) => {
 app.listen(port, () => {
     console.log(`API Server listening on port ${port}`)
 })
-
-keepWeb3Alive()
 
