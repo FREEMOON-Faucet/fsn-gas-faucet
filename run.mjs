@@ -19,7 +19,7 @@ import Address from "./models/Addresses.mjs"
 
 dotenv.config()
 
-const KEY = process.env.PRIVATE_KEY
+const KEY = process.env.COORDINATOR
 const DB = process.env.DB_KEY
 
 
