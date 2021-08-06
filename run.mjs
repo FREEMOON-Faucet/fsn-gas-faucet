@@ -21,7 +21,8 @@ dotenv.config()
 
 const KEY = process.env.COORDINATOR
 const DB = process.env.DB_KEY
-
+const GAS_AMOUNT = "100000"
+const GAS_PRICE = "2000000000"
 
 const app = express()
 //const limiter = rateLimit({
@@ -31,7 +32,7 @@ const app = express()
 const port = 3001
 
 const FSN_MAINNET = {
-    gateway: "wss://mainnetpublicgateway1.fusionnetwork.io:10001",
+    gateway: "https://mainway.freemoon.xyz/gate",
     ID: "32659"
 }
 
@@ -41,8 +42,7 @@ const FSN_TESTNET = {
 }
 
 // Set network parameters
-const NETWORK = FSN_TESTNET
-
+const NETWORK = FSN_MAINNET
 
 let web3
 let provider
@@ -97,9 +97,9 @@ const getWeb3 = async () => {
 
 
 const payoutFSN = async addr => {
-
-    const SEND_GAS_AMOUNT = new BigNumber("100000")
-    const SEND_GAS_PRICE = new BigNumber("2000000000")
+ 
+    const SEND_GAS_AMOUNT = new BigNumber(GAS_AMOUNT)
+    const SEND_GAS_PRICE = new BigNumber(GAS_PRICE)
     const SEND_GAS = SEND_GAS_AMOUNT.multipliedBy(SEND_GAS_PRICE).toString()
 
     try {
@@ -140,7 +140,7 @@ app.post("/api/v1/retrieve", async (req, res) => {
 
         // ipAddress, walletAddress -> date (person can only do the faucet every 7 days)
         // const SEVEN_DAYS = moment().subtract("7", "days").toDate()
-        const ONE_DAY = moment().subtract("1", "minutes").toDate()
+        const ONE_DAY = moment().subtract("1", "days").toDate()
         
         let walletAppliedRecently = await Address.findOne({
             walletAddress
