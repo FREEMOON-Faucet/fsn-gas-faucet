@@ -21,8 +21,10 @@ dotenv.config()
 
 const KEY = process.env.COORDINATOR
 const DB = process.env.DB_KEY
-const GAS_AMOUNT = "100000"
-const GAS_PRICE = "2000000000"
+
+const GAS_AMOUNT = new BigNumber("1000000")
+const GAS_PRICE = new BigNumber("2000000000")
+
 
 const app = express()
 //const limiter = rateLimit({
@@ -92,28 +94,29 @@ const getWeb3 = async () => {
 
     web3 = new Web3(provider)
 
-    return web3.eth.getAccounts()
+    return await web3.eth.getAccounts()
 }
 
 
 const payoutFSN = async addr => {
  
-    const SEND_GAS_AMOUNT = new BigNumber(GAS_AMOUNT)
-    const SEND_GAS_PRICE = new BigNumber(GAS_PRICE)
-    const SEND_GAS = SEND_GAS_AMOUNT.multipliedBy(SEND_GAS_PRICE).toString()
+    const SEND_GAS = GAS_AMOUNT.multipliedBy(GAS_PRICE)
+    
+    const [ accFrom ] = await web3.eth.getAccounts()
+    console.log(accFrom)
 
     try {
         const receipt = await web3.eth.sendTransaction({
             from: account,
             to: addr,
-            value: SEND_GAS,
-            gas: 21000,
-            gasPrice: SEND_GAS_PRICE.toString()
+            value: SEND_GAS.toString(),
+            gas: 40000,
+            gasPrice: GAS_PRICE.toString()
         })
 
         return receipt.transactionHash
     } catch(err) {
-        throw new Error("Sending faucet gas failed: ", err.message)
+        throw new Error("Sending faucet gas failed.", err.message)
     }
 }
 
@@ -122,7 +125,6 @@ app.post("/api/v1/retrieve", async (req, res) => {
     try {
        
         [ account ] = await getWeb3()
-        console.log(account)
         
         // return Bad Request whenever no body was passed
         if (!req.body) return res.sendStatus(400)
@@ -140,24 +142,24 @@ app.post("/api/v1/retrieve", async (req, res) => {
 
         // ipAddress, walletAddress -> date (person can only do the faucet every 7 days)
         // const SEVEN_DAYS = moment().subtract("7", "days").toDate()
-        const ONE_DAY = moment().subtract("1", "days").toDate()
+        // const ONE_DAY = moment().subtract(1, "days").toDate()
         
         let walletAppliedRecently = await Address.findOne({
             walletAddress
         }).lean()
 
-        let ipRecent = await Address.findOne({
-            ipAddress,
-            lastVisit: { $gte: ONE_DAY },
-        }).lean()
+        // let ipRecent = await Address.findOne({
+        //     ipAddress,
+        //     lastVisit: { $gte: ONE_DAY },
+        // }).lean()
 
         let bal = Number(web3.utils.fromWei(await web3.eth.getBalance(walletAddress)))
         let txCount = await web3.eth.getTransactionCount(walletAddress)
 
         if(walletAppliedRecently) {
             throw new Error("Address has already claimed gas.")
-        } else if(ipRecent) {
-            throw new Error("Your IP has already claimed gas for an address recently.")
+        // } else if(ipRecent) {
+        //     throw new Error("Your IP has already claimed gas for an address recently.")
         } else if(txCount !== 0) {
             throw new Error("Must be a new, unused address.")
         } else if(bal) {
