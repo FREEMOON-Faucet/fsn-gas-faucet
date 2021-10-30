@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+/*
+    FSN Gas Faucet: https://freemoonfaucet.xyz
+    Request free FSN gas.
+    Restricted to new addresses that have nonce zero and balance zero.
+    Usable once daily by the same IP address.
+*/
+
 import express from "express" // web framework
 import compression from "compression" // makes files smaller, thus app is faster
 import Mongoose from "mongoose" // mongodb object modelling tool
@@ -11,56 +18,45 @@ import moment from "moment" // date library
 import bodyParser from "body-parser" // parse incoming request bodies
 import rateLimit from "express-rate-limit" // limit repeated requests to the api
 import Web3 from "web3" // interacts with blockchain
-import web3FusionExtend from "web3-fusion-extend" // interacts with fusion blockchain
-import dotenv from "dotenv"
-import HDWalletProvider from "@truffle/hdwallet-provider"
-
-import Address from "./models/Addresses.mjs"
+import dotenv from "dotenv" // access environmental variables
+import Address from "./models/Addresses.mjs" // address model
 
 dotenv.config()
+const PROVIDER = process.env.PROVIDER_TESTNET
+const COORDINATOR = process.env.COORDINATOR
+const DB_KEY = process.env.DB_KEY
+const GAS_AMOUNT = new BigNumber(process.env.GAS_AMOUNT)
+const GAS_PRICE = new BigNumber(process.env.GAS_PRICE)
 
-const KEY = process.env.COORDINATOR
-const DB = process.env.DB_KEY
-
-const GAS_AMOUNT = new BigNumber("1000000")
-const GAS_PRICE = new BigNumber("2000000000")
-
+const PORT = 3001
 
 const app = express()
-//const limiter = rateLimit({
-//    windowMs: 15 * 60 * 1000, // 15 minutes
-//    max: 10 // limit each IP to 100 requests per windowMs
-//})
-const port = 3001
+const router = express.Router()
 
-const FSN_MAINNET = {
-    gateway: "https://mainway.freemoon.xyz/gate",
-    ID: "32659"
-}
+router.post("/api/v1/retrieve", (req, res) => {
+    const ip = req.headers([ "x-forwarded-for" ]) || req.connection.remoteAddress
+    console.log(`IP ADDRESS: ${ ip }`)
+})
 
-const FSN_TESTNET = {
-    gateway: "https://testway.freemoon.xyz/gate",
-    ID: "46688"
-}
+app.set("trust proxy", 1)
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10 // limit each IP to 10 requests per windowMs
+})
 
-// Set network parameters
-const NETWORK = FSN_MAINNET
-
-let web3
-let provider
-let account
 
 // apply to all requests
-//app.use(limiter)
-app.use(bodyParser.urlencoded({ extended: false }))
-app.use(bodyParser.json())
+app.use(router)
+app.use(limiter)
+// app.use(bodyParser.urlencoded({ extended: false }))
+// app.use(bodyParser.json())
 app.use(cors())
 app.use(helmet())
 
 
 // Database
 Mongoose.connect(
-    `mongodb+srv://dbUser:${DB}@fsn-addresses.yn8dh.mongodb.net/faucet`,
+    `mongodb+srv://freemoon-dev:${ DB_KEY }@fsn-addresses.yn8dh.mongodb.net/test`,
     {
         useCreateIndex: true,
         useNewUrlParser: true,
@@ -69,45 +65,24 @@ Mongoose.connect(
 )
 
 
-// const keepWeb3Alive = () => {
-//     provider = new Web3.providers.WebsocketProvider(NETWORK.gateway)
-//     provider.on("connect", function() { 
-//         web3._isConnected = true
-//     })
-//     provider.on("error", function(err) {
-//         provider.disconnect()
-//     })
-//     provider.on("end", function(err) {
-//         web3._isConnected = false
-//         setTimeout(() => {
-//             keepWeb3Alive()
-//         }, 500)
-//     })
-//     web3 = new Web3(provider)
-// }
-
-const getWeb3 = async () => {
-    provider = new HDWalletProvider({
-        privateKeys: [ KEY ],
-        providerOrUrl: NETWORK.gateway
-    })
-
-    web3 = new Web3(provider)
-
-    return await web3.eth.getAccounts()
+const connect = async () => {
+    const web3 = new Web3(PROVIDER)
+    const account = web3.eth.accounts.privateKeyToAccount(COORDINATOR)
+    web3.eth.accounts.wallet.add(account)
+    return { web3, account }
 }
 
 
-const payoutFSN = async addr => {
- 
+const payoutFSN = async (addr, web3, account) => { 
+    const coordinator = account.address
     const SEND_GAS = GAS_AMOUNT.multipliedBy(GAS_PRICE)
-    
-    const [ accFrom ] = await web3.eth.getAccounts()
-    console.log(accFrom)
+
+    const coordBal = web3.eth.fromWei(await web3.eth.getBalance(coordinator))
+    if(coordBal < SEND_GAS) throw new Error(`FSN Gas Faucet funds too low: ${ coordBal }`)
 
     try {
         const receipt = await web3.eth.sendTransaction({
-            from: account,
+            from: coordinator,
             to: addr,
             value: SEND_GAS.toString(),
             gas: 40000,
@@ -116,16 +91,15 @@ const payoutFSN = async addr => {
 
         return receipt.transactionHash
     } catch(err) {
-        throw new Error("Sending faucet gas failed.", err.message)
+        throw new Error(`Sending faucet gas failed: ${ err.message }`)
     }
 }
 
 
 app.post("/api/v1/retrieve", async (req, res) => {
-    try {
-       
-        [ account ] = await getWeb3()
-        
+    try {       
+        const { web3, account } = await connect()
+
         // return Bad Request whenever no body was passed
         if (!req.body) return res.sendStatus(400)
 
@@ -138,37 +112,29 @@ app.post("/api/v1/retrieve", async (req, res) => {
         }
 
         // Let's filter out the real ip address from the headers
-        let ipAddress = req.headers["x-forwarded-for"] || req.socket.remoteAddress
 
-        // ipAddress, walletAddress -> date (person can only do the faucet every 7 days)
-        // const SEVEN_DAYS = moment().subtract("7", "days").toDate()
-        // const ONE_DAY = moment().subtract(1, "days").toDate()
+        // ipAddress -> date (person can only do the faucet once a day)
+        const ONE_DAY = moment().subtract(1, "days").toDate()
         
-        let walletAppliedRecently = await Address.findOne({
-            walletAddress
+        let ipRecent = await Address.findOne({
+            ipAddress,
+            lastVisit: { $gte: ONE_DAY },
         }).lean()
-
-        // let ipRecent = await Address.findOne({
-        //     ipAddress,
-        //     lastVisit: { $gte: ONE_DAY },
-        // }).lean()
 
         let bal = Number(web3.utils.fromWei(await web3.eth.getBalance(walletAddress)))
         let txCount = await web3.eth.getTransactionCount(walletAddress)
 
-        if(walletAppliedRecently) {
-            throw new Error("Address has already claimed gas.")
-        // } else if(ipRecent) {
-        //     throw new Error("Your IP has already claimed gas for an address recently.")
+        if(ipRecent) {
+            throw new Error(`It appears your IP address has claimed for an address recently.`)
         } else if(txCount !== 0) {
-            throw new Error("Must be a new, unused address.")
+            throw new Error(`Entered address does not appear to be unused.`)
         } else if(bal) {
-            throw new Error(`Address has a non-zero balance: ${bal}`)
+            throw new Error(`Entered address appears to have a non-zero balance: ${ bal }`)
         }    
 
         // Let's execute the payout
-        let txHash = await payoutFSN(walletAddress)
-        console.log(`Sending gas to ${walletAddress}, ${txHash}`)
+        // let txHash = await payoutFSN(walletAddress, web3, account)
+        console.log(`Sending gas to ${ walletAddress }, ${ txHash }`)
 
         await Address.updateOne(
             {
@@ -181,7 +147,7 @@ app.post("/api/v1/retrieve", async (req, res) => {
 
         return res.json({
             txHash,
-            status: `Success. Gas will be sent to ${walletAddress} shortly.`,
+            status: `Success. Gas will be sent to ${ walletAddress } shortly.`,
         })
     } catch(err) {
         console.error(err.message)
@@ -190,7 +156,7 @@ app.post("/api/v1/retrieve", async (req, res) => {
 })
 
 
-app.listen(port, () => {
-    console.log(`API Server listening on port ${port}`)
+app.listen(PORT, () => {
+    console.log(`API Server listening on port ${ PORT }`)
 })
 
