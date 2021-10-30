@@ -33,24 +33,27 @@ const PORT = 3001
 const app = express()
 const router = express.Router()
 
+app.use(cors())
+
 router.post("/api/v1/retrieve", (req, res) => {
-    const ip = req.headers([ "x-forwarded-for" ]) || req.connection.remoteAddress
+    // const ip = req.headers([ "x-forwarded-for" ]) || req.connection.remoteAddress
+    const ip = req.ip
     console.log(`IP ADDRESS: ${ ip }`)
 })
 
-app.set("trust proxy", 1)
+//app.set("trust proxy", 1)
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 10 // limit each IP to 10 requests per windowMs
 })
 
 
+
 // apply to all requests
 app.use(router)
 app.use(limiter)
-// app.use(bodyParser.urlencoded({ extended: false }))
-// app.use(bodyParser.json())
-app.use(cors())
+app.use(bodyParser.urlencoded({ extended: false }))
+app.use(bodyParser.json())
 app.use(helmet())
 
 
