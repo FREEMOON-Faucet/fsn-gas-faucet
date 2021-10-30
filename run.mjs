@@ -22,7 +22,7 @@ import dotenv from "dotenv" // access environmental variables
 import Address from "./models/Addresses.mjs" // address model
 
 dotenv.config()
-const PROVIDER = process.env.PROVIDER_TESTNET
+const PROVIDER = process.env.PROVIDER
 const COORDINATOR = process.env.COORDINATOR
 const DB_KEY = process.env.DB_KEY
 const GAS_AMOUNT = new BigNumber(process.env.GAS_AMOUNT)
@@ -34,14 +34,8 @@ const app = express()
 const router = express.Router()
 
 app.use(cors())
+app.set("trust proxy", 1)
 
-router.post("/api/v1/retrieve", (req, res) => {
-    // const ip = req.headers([ "x-forwarded-for" ]) || req.connection.remoteAddress
-    const ip = req.ip
-    console.log(`IP ADDRESS: ${ ip }`)
-})
-
-//app.set("trust proxy", 1)
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 10 // limit each IP to 10 requests per windowMs
@@ -50,12 +44,11 @@ const limiter = rateLimit({
 
 
 // apply to all requests
-app.use(router)
 app.use(limiter)
-app.use(bodyParser.urlencoded({ extended: false }))
 app.use(bodyParser.json())
+app.use(bodyParser.urlencoded({ extended: false }))
 app.use(helmet())
-
+app.use(router)
 
 // Database
 Mongoose.connect(
@@ -80,8 +73,8 @@ const payoutFSN = async (addr, web3, account) => {
     const coordinator = account.address
     const SEND_GAS = GAS_AMOUNT.multipliedBy(GAS_PRICE)
 
-    const coordBal = web3.eth.fromWei(await web3.eth.getBalance(coordinator))
-    if(coordBal < SEND_GAS) throw new Error(`FSN Gas Faucet funds too low: ${ coordBal }`)
+    const coordBal = (await web3.eth.getBalance(coordinator)).toString()
+    if(SEND_GAS.isGreaterThanOrEqualTo(coordBal)) throw new Error(`FSN Gas Faucet funds too low: ${ coordBal }`)
 
     try {
         const receipt = await web3.eth.sendTransaction({
@@ -99,8 +92,11 @@ const payoutFSN = async (addr, web3, account) => {
 }
 
 
-app.post("/api/v1/retrieve", async (req, res) => {
-    try {       
+router.post("/api/v1/retrieve", async (req, res) => {
+    const ipAddress = req.headers[ "x-real-ip" ] || req.connection.remoteAddress
+    // console.log(`IP ADDRESS: ${ ipAddress }`)
+
+    try {
         const { web3, account } = await connect()
 
         // return Bad Request whenever no body was passed
@@ -136,7 +132,7 @@ app.post("/api/v1/retrieve", async (req, res) => {
         }    
 
         // Let's execute the payout
-        // let txHash = await payoutFSN(walletAddress, web3, account)
+        let txHash = await payoutFSN(walletAddress, web3, account)
         console.log(`Sending gas to ${ walletAddress }, ${ txHash }`)
 
         await Address.updateOne(
